@@ -7,7 +7,7 @@ import subprocess
 import shlex
 import json
 from tempfile import NamedTemporaryFile
-from datetime import datetime
+from datetime import datetime, timedelta
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -18,8 +18,8 @@ START_ROW = 2
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 DATE_RANGE = f"%s!A{START_ROW}:A"
-LAST_DATA_RANGE = f"%s!A%d:E%d"
-APPEND_RANGE = "%s!A%d:E%d"
+LAST_DATA_RANGE = f"%s!A%d:F%d"
+APPEND_RANGE = "%s!A%d:F%d"
 
 CONFIG_PATH = Path.home().joinpath(".config", "putt")
 CREDENTIALS_FILE_PATH = CONFIG_PATH.joinpath("credentials.json")
@@ -53,6 +53,63 @@ def putt():
             r"match ExtraWhitespace /\s\+$/",
         ]
     )
+
+    input_file_boilerplate = "\n".join(
+        [
+            "",
+            "",
+            "",
+            "",
+            "# y                                productive (y/n)",
+            "# park visit                       description",
+            "# 1:05                             time estimate hh:mm",
+            "# hanging out with some friends    detail",
+        ]
+    )
+
+    valid_input = True
+    with NamedTemporaryFile("w") as temp_file:
+        temp_file.seek(0)
+        temp_file.write(input_file_boilerplate)
+        temp_file.flush()
+        subprocess.run(
+            shlex.split(f'{vim_command} -c "{vim_commands}" {temp_file.name}'),
+        )
+        with open(temp_file.name) as read_temp_file:
+            try:
+                productive, description, estimate, detail = map(
+                    lambda s: s.strip(), read_temp_file.readlines()[:4]
+                )
+                if not productive or not description:
+                    valid_input = False
+            except ValueError as e:
+                print(e)
+                valid_input = False
+
+    productive = (
+        "Y"
+        if re.match(
+            r"y(es)?|t(rue)?",
+            productive,
+            flags=re.RegexFlag.I,
+        )
+        else "N"
+    )
+
+    estimate = [*map(int, reversed(estimate.split(":")))]
+
+    if not estimate:
+        valid_input = False
+    elif len(estimate) == 1:
+        (estimate,) = estimate
+    else:
+        estimate = estimate[0] + 60 * estimate[1]
+
+    estimate = (datetime.now() + timedelta(minutes=estimate)).strftime("%X")
+
+    if not valid_input:
+        print("Empty or invalid input")
+        return
 
     if not CONFIG_FILE_PATH.exists():
         raise CredentialsNotFoundError(f"Couldn't find config at {CONFIG_FILE_PATH}")
@@ -96,63 +153,6 @@ def putt():
     )
     values = result.get("values", [])
     last_row = len(values) + START_ROW - 1
-    last_data_range = LAST_DATA_RANGE % (month_name, *[last_row] * 2)
-    last_result = (
-        sheet.values()
-        .get(spreadsheetId=spreadsheet_id, range=last_data_range)
-        .execute()
-    )
-
-    last_values = last_result.get("values", [])[0]
-    last_productive = last_values[3].lower()
-    last_description = last_values[2]
-    last_detail = last_values[4] if len(last_values) > 4 else ""
-    input_file_boilerplate = "\n".join(
-        [
-            last_productive,
-            last_description,
-            last_detail,
-            "# y                                productive (y/n)",
-            "# park visit                       description",
-            "# hanging out with some friends    detail",
-        ]
-    )
-
-    valid_input = True
-    with NamedTemporaryFile("w") as temp_file:
-        temp_file.seek(0)
-        temp_file.write(input_file_boilerplate)
-        temp_file.flush()
-        subprocess.run(
-            shlex.split(f'{vim_command} -c "{vim_commands}" {temp_file.name}'),
-        )
-        with open(temp_file.name) as read_temp_file:
-            try:
-                productive, description, detail = map(
-                    lambda s: s.strip(), read_temp_file.readlines()[:3]
-                )
-                if not productive or not description:
-                    valid_input = False
-            except ValueError:
-                valid_input = False
-
-    if not valid_input or [last_productive, last_description, last_detail] == [
-        productive,
-        description,
-        detail,
-    ]:
-        print("Empty, unchanged, or invalid input")
-        return
-
-    productive = (
-        "Y"
-        if re.match(
-            r"y(es)?|t(rue)?",
-            productive,
-            flags=re.RegexFlag.I,
-        )
-        else "N"
-    )
 
     update_range = APPEND_RANGE % (month_name, *[last_row + 1] * 2)
     print("Writing activity...")
@@ -167,6 +167,7 @@ def putt():
                         now.strftime("%X"),
                         description,
                         productive,
+                        estimate,
                         detail,
                     ]
                 ]
