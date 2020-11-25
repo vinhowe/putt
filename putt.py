@@ -95,16 +95,15 @@ def putt():
         else "N"
     )
 
-    estimate = [*map(int, reversed(estimate.split(":")))]
-
-    if not estimate:
-        valid_input = False
-    elif len(estimate) == 1:
-        (estimate,) = estimate
+    if estimate is not None and estimate.strip() != "":
+        estimate = [*map(int, reversed(estimate.split(":")))]
+        if len(estimate) == 1:
+            (estimate,) = estimate
+        else:
+            estimate = estimate[0] + 60 * estimate[1]
+        estimate = (datetime.now() + timedelta(minutes=estimate)).strftime("%X")
     else:
-        estimate = estimate[0] + 60 * estimate[1]
-
-    estimate = (datetime.now() + timedelta(minutes=estimate)).strftime("%X")
+        valid_input = False
 
     if not valid_input:
         print("Empty or invalid input")
@@ -180,4 +179,3 @@ def putt():
 
 if __name__ == "__main__":
     putt()
-
