@@ -1,4 +1,3 @@
-#!/home/vinhowe/dev/timelog/venv/bin/python
 from __future__ import print_function
 import re
 import pickle
@@ -181,3 +180,4 @@ def putt():
 
 if __name__ == "__main__":
     putt()
+
